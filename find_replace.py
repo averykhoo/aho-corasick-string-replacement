@@ -22,7 +22,7 @@ from typing import Union
 import psutil
 
 try:
-    from .tokenizer import is_punctuation_char, is_space_char
+    from tokenizer import is_punctuation_char, is_space_char
 
 except ImportError:
     def is_punctuation_char(char):
@@ -981,7 +981,10 @@ if __name__ == '__main__':
     m_init = psutil.virtual_memory().used
 
     # set tokenizer
-    trie = Trie(tokenizer=space_tokenize)
+    from tokenizer import unicode_tokenize
+
+    # trie = Trie(tokenizer=space_tokenize)
+    trie = Trie(tokenizer=unicode_tokenize)
     trie.update(mapping, verbose=True)
     m_end = psutil.virtual_memory().used
     t_end = datetime.datetime.now()
