@@ -19,31 +19,31 @@ from typing import Iterable
 from typing import List
 from typing import Union
 
-import psutil
-
-try:
-    from tokenizer import is_punctuation_char, is_space_char
-
-except ImportError:
-    def is_punctuation_char(char):
-        return char in {
-            # COMMON PUNCTUATION
-            '!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?',
-            '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~', '‘', '’', '“', '”', '§', '±', '√', '\u2014',
-            '\u2013', '\u2025', '\u2026', '\u22ee', '\u3002', '\u300e', '\u300f', '\u300c', '\u300d', '\ufe41',
-            '\ufe42', '\u3001', '\u2022', '\u2027', '\u300a', '\u300b', '\u3008', '\u3009', '\ufe4f', '\uff0c',
-            '\uff01', '\uff1f', '\uff1b', '\uff1a', '\uff08', '\uff09', '\uff3b', '\uff3d', '\u3010', '\u3011',
-            # UNPRINTABLE CHARS
-            '\u0000', '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007', '\u0008', '\u000e',
-            '\u000f', '\u0010', '\u0011', '\u0012', '\u0013', '\u0014', '\u0015', '\u0016', '\u0017', '\u0018',
-            '\u0019', '\u001a', '\u001b', '\u007f', '\uffef', '\ufffd'}
+from tokenizer import is_punctuation_char
+from tokenizer import is_space_char
 
 
-    def is_space_char(char):
-        return char in {'\t', '\n', '\v', '\f', '\r', ' ', '\x85', '\xa0', '\x1c', '\x1d', '\x1e', '\x1f', '\ufeff',
-                        '\u1680', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007',
-                        '\u2008', '\u2009', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\u180e',
-                        '\u200b', '\u200c', '\u200d', '\u2060', '\u2800'}  # UNICODE SPACES
+# def is_punctuation_char(char):
+#     # simplified version
+#     return char in {
+#         # COMMON PUNCTUATION
+#         '!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?',
+#         '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~', '‘', '’', '“', '”', '§', '±', '√', '\u2014',
+#         '\u2013', '\u2025', '\u2026', '\u22ee', '\u3002', '\u300e', '\u300f', '\u300c', '\u300d', '\ufe41',
+#         '\ufe42', '\u3001', '\u2022', '\u2027', '\u300a', '\u300b', '\u3008', '\u3009', '\ufe4f', '\uff0c',
+#         '\uff01', '\uff1f', '\uff1b', '\uff1a', '\uff08', '\uff09', '\uff3b', '\uff3d', '\u3010', '\u3011',
+#         # UNPRINTABLE CHARS
+#         '\u0000', '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007', '\u0008', '\u000e',
+#         '\u000f', '\u0010', '\u0011', '\u0012', '\u0013', '\u0014', '\u0015', '\u0016', '\u0017', '\u0018',
+#         '\u0019', '\u001a', '\u001b', '\u007f', '\uffef', '\ufffd'}
+
+
+# def is_space_char(char):
+#     # simplified version
+#     return char in {'\t', '\n', '\v', '\f', '\r', ' ', '\x85', '\xa0', '\x1c', '\x1d', '\x1e', '\x1f', '\ufeff',
+#                     '\u1680', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007',
+#                     '\u2008', '\u2009', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\u180e',
+#                     '\u200b', '\u200c', '\u200d', '\u2060', '\u2800'}  # UNICODE SPACES
 
 
 class Match:
@@ -965,6 +965,8 @@ def self_test():
 
 if __name__ == '__main__':
     self_test()
+
+    import psutil
 
     # define input/output
     input_folder = os.path.abspath('test/input')
