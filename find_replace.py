@@ -204,7 +204,7 @@ def yield_lines(file_path, make_lower=False, threshold_len=0):
                 yield line
 
 
-_SENTINEL = object()  # todo: rename to `NOTHING`?
+_NOTHING = object()  # in Google's pygtrie library this is called `_SENTINEL`
 
 
 class Trie(object):
@@ -221,7 +221,7 @@ class Trie(object):
 
         # noinspection PyMissingConstructor
         def __init__(self):
-            self.REPLACEMENT = _SENTINEL
+            self.REPLACEMENT = _NOTHING
 
     def __init__(self, replacements=None, tokenizer=None, detokenizer=None, lowercase=False):
         """
@@ -274,7 +274,7 @@ class Trie(object):
             if token not in head:
                 return False
             head = head[token]
-        return head.REPLACEMENT is not _SENTINEL
+        return head.REPLACEMENT is not _NOTHING
 
     def __len__(self):
         # return self.length
@@ -299,7 +299,7 @@ class Trie(object):
             if token not in head:
                 raise KeyError(key)
             head = head[token]
-        if head.REPLACEMENT is _SENTINEL:
+        if head.REPLACEMENT is _NOTHING:
             raise KeyError(key)
         return head.REPLACEMENT
 
@@ -313,7 +313,7 @@ class Trie(object):
         head = self.root
         for token in self.tokenizer(key):
             head = head.setdefault(token, self.Node())
-        if head.REPLACEMENT is not _SENTINEL:
+        if head.REPLACEMENT is not _NOTHING:
             return head.REPLACEMENT
         self.length += 1
         head.REPLACEMENT = value
@@ -323,7 +323,7 @@ class Trie(object):
         head = self.root
         for token in self.tokenizer(key):
             head = head.setdefault(token, self.Node())
-        if head.REPLACEMENT is _SENTINEL:
+        if head.REPLACEMENT is _NOTHING:
             self.length += 1
         head.REPLACEMENT = value
         return value
@@ -348,12 +348,12 @@ class Trie(object):
             breadcrumbs.append((token, head))
 
         # key has no value, hence not contained in trie
-        if head.REPLACEMENT is _SENTINEL:
+        if head.REPLACEMENT is _NOTHING:
             raise KeyError(key)
 
         # store value to be returned later and erase value
         ret_val = head.REPLACEMENT
-        head.REPLACEMENT = _SENTINEL
+        head.REPLACEMENT = _NOTHING
         self.length -= 1
 
         # erase unnecessary nodes backwards, if they have no value and no descendants
@@ -364,7 +364,7 @@ class Trie(object):
                 prev_token = token
             else:
                 break
-            if head.REPLACEMENT is not _SENTINEL:
+            if head.REPLACEMENT is not _NOTHING:
                 break
 
         # finally return the popped key & value
@@ -389,7 +389,7 @@ class Trie(object):
                 _stack.append((head, keys))
                 head = head[key]
                 _path.append(key)
-                if head.REPLACEMENT is not _SENTINEL:
+                if head.REPLACEMENT is not _NOTHING:
                     yield self.detokenizer(_path), head.REPLACEMENT
                 _stack.append((head, sorted(head.keys(), reverse=True)))
             elif _path:
@@ -457,7 +457,7 @@ class Trie(object):
             else:
                 _current_parts = _parts.pop()
                 if _current_parts:
-                    if head.REPLACEMENT is not _SENTINEL:
+                    if head.REPLACEMENT is not _NOTHING:
                         _parts[-1].append('(?:')
                         _parts[-1].extend(_current_parts)
                         _parts[-1].append(')?')
@@ -618,7 +618,7 @@ class Trie(object):
                 if input_item in span_head:
                     new_head = span_head[input_item]
                     spans[span_start] = new_head
-                    if new_head.REPLACEMENT is not _SENTINEL:
+                    if new_head.REPLACEMENT is not _NOTHING:
                         matches[span_start] = (index + 1, new_head.REPLACEMENT)
 
                         # longest subsequence matching does not allow one match to start within another match
@@ -704,7 +704,7 @@ class Trie(object):
                     new_head = span_head[input_item]
                     span_seq.append(input_item)
                     spans[span_start] = (new_head, span_seq)
-                    if new_head.REPLACEMENT is not _SENTINEL:
+                    if new_head.REPLACEMENT is not _NOTHING:
                         matches[span_start] = (index + 1, span_seq[:])
 
                         # longest subsequence matching does not allow one match to start within another match
