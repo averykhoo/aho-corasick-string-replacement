@@ -19,32 +19,6 @@ from typing import Iterable
 from typing import List
 from typing import Union
 
-from tokenizer import is_punctuation_char
-from tokenizer import is_space_char
-
-
-# def is_punctuation_char(char):
-#     # simplified version
-#     return char in {
-#         # COMMON PUNCTUATION
-#         '!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.', '/', ':', ';', '<', '=', '>', '?',
-#         '@', '[', '\\', ']', '^', '_', '`', '{', '|', '}', '~', '‘', '’', '“', '”', '§', '±', '√', '\u2014',
-#         '\u2013', '\u2025', '\u2026', '\u22ee', '\u3002', '\u300e', '\u300f', '\u300c', '\u300d', '\ufe41',
-#         '\ufe42', '\u3001', '\u2022', '\u2027', '\u300a', '\u300b', '\u3008', '\u3009', '\ufe4f', '\uff0c',
-#         '\uff01', '\uff1f', '\uff1b', '\uff1a', '\uff08', '\uff09', '\uff3b', '\uff3d', '\u3010', '\u3011',
-#         # UNPRINTABLE CHARS
-#         '\u0000', '\u0001', '\u0002', '\u0003', '\u0004', '\u0005', '\u0006', '\u0007', '\u0008', '\u000e',
-#         '\u000f', '\u0010', '\u0011', '\u0012', '\u0013', '\u0014', '\u0015', '\u0016', '\u0017', '\u0018',
-#         '\u0019', '\u001a', '\u001b', '\u007f', '\uffef', '\ufffd'}
-
-
-# def is_space_char(char):
-#     # simplified version
-#     return char in {'\t', '\n', '\v', '\f', '\r', ' ', '\x85', '\xa0', '\x1c', '\x1d', '\x1e', '\x1f', '\ufeff',
-#                     '\u1680', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007',
-#                     '\u2008', '\u2009', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\u180e',
-#                     '\u200b', '\u200c', '\u200d', '\u2060', '\u2800'}  # UNICODE SPACES
-
 
 class Match:
     def __init__(self, start, end, match):
@@ -127,64 +101,6 @@ def format_seconds(num):
         unit += 1
     unit = ['seconds', 'minutes', 'hours', 'days', 'weeks'][unit]
     return ('%.2f %s' if num % 1 else '%d %s') % (num, unit[:-1] if num == 1 else unit)
-
-
-def space_tokenize(text, token_max_len=65535, emit_space=True, emit_punctuation=True):
-    """
-    tokenize by whitespace and punctuation
-
-    :param text: to be split
-    :param token_max_len: truncate tokens after this length
-    :param emit_space: emit spaces
-    :param emit_punctuation: emit punctuation
-    """
-    # init
-    space_char = ''
-    text_buffer = []
-
-    # main loop over all text
-    for char in text:
-        # 1) spaces
-        if is_space_char(char):
-            if char == space_char and len(text_buffer) < token_max_len:
-                text_buffer.append(char)
-            else:
-                if text_buffer:
-                    yield ''.join(text_buffer)
-                if emit_space:
-                    space_char = char
-                    text_buffer = [char]
-                else:
-                    space_char = ''
-
-        # 2) punctuation
-        elif is_punctuation_char(char):
-            if text_buffer:
-                yield ''.join(text_buffer)
-            if emit_punctuation:
-                yield char
-            space_char = ''
-            text_buffer = []
-
-        # 3) first char
-        elif space_char:
-            if text_buffer:
-                yield ''.join(text_buffer)
-            space_char = ''
-            text_buffer = [char]
-
-        # 4) next char
-        elif len(text_buffer) < token_max_len:
-            text_buffer.append(char)
-
-        # 5) max char
-        else:
-            yield ''.join(text_buffer)
-            text_buffer = [char]
-
-    # finally, yield the last chunk
-    if text_buffer:
-        yield ''.join(text_buffer)
 
 
 def yield_lines(file_path, make_lower=False, threshold_len=0):
@@ -985,8 +901,7 @@ if __name__ == '__main__':
     # set tokenizer
     from tokenizer import unicode_tokenize
 
-    # trie = Trie(tokenizer=space_tokenize)
-    trie = Trie(tokenizer=unicode_tokenize)
+    trie = Trie(tokenizer=unicode_tokenize)  # words_only=False, as_tokens=False
     trie.update(mapping, verbose=True)
     m_end = psutil.virtual_memory().used
     t_end = datetime.datetime.now()
