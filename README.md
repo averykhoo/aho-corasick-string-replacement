@@ -15,10 +15,10 @@
 ```python
 from find_replace import to_regex
 
-strings = ['pen', 'pineapple', 'apple', 'pencil']
+strings = ['Pen', 'Pineapple', 'Apple', 'Pencil']
 
-pattern = to_regex(strings, lowercase=True)
-print(pattern)  # '(?:(?:apple|p(?:en(?:cil)?|ineapple)))'
+pattern = to_regex(strings, case_sensitive=True)
+print(pattern)  # '(?:(?:Apple|P(?:en(?:cil)?|ineapple)))'
 ```
 -   Why is space being changed to match all whitespace ('\s')?
     -   Fuzzy spaces make life easier

@@ -128,7 +128,7 @@ class Trie(object):
 
     @staticmethod
     def fromkeys(keys, default='', verbose=False, case_sensitive=True):
-        _trie = Trie(lowercase=case_sensitive)
+        _trie = Trie(lowercase=not case_sensitive)
         _trie.update(((key, default) for key in keys), verbose=verbose)
         return _trie
 
