@@ -390,6 +390,10 @@ class Trie(object):
         if simplify:
 
             def char_group(match):
+                """
+                helper function to simplify character groups for regex creation
+                used with the regex below to convert '(?:a|b|c|d)' -> '[abcd]'
+                """
                 out = ['[']
                 sep = False
                 escaped = False
@@ -723,6 +727,9 @@ class Trie(object):
             t1 = time.time()
             print('total time: %s' % format_seconds(t1 - t0))
 
+    # I've had enough of my own typos
+    find_all = findAll = findall
+    find_iter = findIter = finditer
 
 def to_regex(list_of_strings,
              case_sensitive=False,

@@ -98,6 +98,8 @@ print(output)  # 'I have a orange... I have an orange...'
 
 
 ##  To-Do
+-   `find_longest` 
+    -   find matches that add up to the longest possible subsequence, instead of first longest matches
 -   refactor code into multiple files?
 -   parallelize file processing to make processing faster, sharing a single trie
 
