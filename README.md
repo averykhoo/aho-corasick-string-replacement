@@ -34,24 +34,27 @@ print(pattern)  # '(?:(?:Apple|P(?:en(?:cil)?|ineapple)))'
 from find_replace import Trie
 
 target = 'I have a pen... I have an apple...'
-strings = ['pen', 'pineapple', 'apple', 'pencil']
+strings = [f'pen', f'pineapple', f'apple', f'pencil']
 
 trie = Trie.fromkeys(strings)
 matches = trie.findall(target)  # `findall` returns a list of str
 print(matches)  # ['pen', 'apple']
 ```
 -   How do I do incremental search (via a generator)?
-    -   `trie.finditer(target)`
--   How do I make it case insensitive?
+    -   Use `trie.finditer(target)`
+    -   *Returns Match objects, you'll need to use `Match.str` or `str(Match)` to get the matched strings*
+-   How do I make it case-insensitive?
     -   Use `trie = Trie.fromkeys(strings, lowercase=True)`
-    -   *You must a case-insensitive trie to perform case-insensitive search, and vice versa* 
--   How do I find overlapping matches?
-    -   Use `trie.findall(target, allow_overlapping=True)`
-    -   Or `trie.finditer(target, allow_overlapping=True)`
-    -   *Note that you cannot perform replacements on overlapping matches*
+    -   *You must create a case-insensitive trie to perform case-insensitive search, and vice versa* 
 -   How do I get Match objects (like the builtin `re.finditer`)?
-    -   `trie.finditer(target)`
+    -   Use `trie.finditer(target)`
     -   *Note that not all properties of the re.Match object are available* 
+-   How do I find overlapping matches?
+    -   Use `trie.findall(target, allow_overlapping=True)` or `trie.finditer(target, allow_overlapping=True)`
+    -   *Note that you cannot perform replacements on overlapping matches*
+-   How do I find the set of possible matches that forms the longest subsequence?
+    -   Use `trie.findall_longest(target)`
+    -   *Note that you cannot perform replacements on the longest subsequence matches*
 
 ### Replace occurrences of some strings with other strings
 ```python
@@ -64,7 +67,7 @@ trie = Trie(replacements)
 output = trie.translate(target)
 print(output)  # 'I have a pineapple... I have an pencil...'
 ```
--   How do I make it case insensitive?
+-   How do I make it case-insensitive?
     -   Not implemented
 -   Why is it finding substrings (e.g. "java" in "javascript")?
     -   That's just what a string search should do...
@@ -77,9 +80,9 @@ print(output)  # 'I have a pineapple... I have an pencil...'
 from find_replace import Trie
 
 target = 'I have a pen... I have an apple...'
-strings = ['pen', 'pineapple', 'apple', 'pencil']
+strings = [f'pen', f'pineapple', f'apple', f'pencil']
 
-trie = Trie.fromkeys(strings, 'orange')
+trie = Trie.fromkeys(strings, f'orange')
 output = trie.translate(target)
 print(output)  # 'I have a orange... I have an orange...'
 ```
@@ -98,8 +101,6 @@ print(output)  # 'I have a orange... I have an orange...'
 
 
 ##  To-Do
--   `find_longest` 
-    -   find matches that add up to the longest possible subsequence, instead of first longest matches
 -   refactor code into multiple files?
 -   parallelize file processing to make processing faster, sharing a single trie
 
@@ -108,8 +109,8 @@ print(output)  # 'I have a orange... I have an orange...'
     -   checked the literature, doesn't seem possible to implement in a simple way
     -   requires inverted failure link map
 
--   check why flashtext algo is faster
-    -   because it does't handle unicode? (unlikely)
+-   check why `flashtext` algo is faster
+    -   because it doesn't handle unicode? (unlikely)
     -   because the simpler algo has fewer branches? (likely)
         -   with bugs (if input ends with space)
         -   loads everything into memory to work with, assumes no IO bound
@@ -118,11 +119,11 @@ print(output)  # 'I have a orange... I have an orange...'
     - 
     -   because it favors average case (short matches) and ignores the psychopathic worst case? (true but not too bad)
 
--   fix case insensitive replacement
+-   fix case-insensitive replacement
 -   maybe mimic flashtext for average case
-    -   welp lesson learned here, better big O may not mean better overall performance
     -   modified to use generators
     -   and a decent tokenizer
+    -   lesson learned here is that better big O (worst case) may not mean better overall performance
 
 -   run tokenizer on file `tokenize(open('test.txt'))`
 -   min (key)
@@ -130,7 +131,7 @@ print(output)  # 'I have a orange... I have an orange...'
 -   predecessor (key)
 -   successor (key)
 -   match should be in string indices, not token indices
--   findall case insensitive should return case sensitive matches
+-   findall case-insensitive should return case-sensitive matches
 -   test len in the following cases:
     -   delete
     -   setdefault
@@ -139,8 +140,6 @@ print(output)  # 'I have a orange... I have an orange...'
     -   set existing
 -   slice on integer indices
 -   index of string (e.g. `['a', 'b', 'c'].index('b')`)
--   support for word boundaries without tokenizer?
-    -   but this would slow down the algo since we might be checking for boundaries twice
 
 ##  Notes on Aho Corasick string search
 -   to implement incremental AC, we need an inverse failure link tree
