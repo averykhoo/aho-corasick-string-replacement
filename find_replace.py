@@ -159,7 +159,7 @@ class Trie(object):
 
     def __init__(self,
                  replacements: Optional[REPLACEMENTS_TYPE] = None,
-                 tokenizer: Callable[[Iterable[AnyStr]], Iterable[AnyStr]] = None,
+                 tokenizer: Callable[[Union[AnyStr, Iterable[AnyStr]]], Iterable[AnyStr]] = None,
                  detokenizer: Callable[[Iterable[AnyStr]], AnyStr] = None,
                  lowercase: bool = False,
                  ):
@@ -540,6 +540,7 @@ class Trie(object):
         :param file_path: file to read
         """
         with io.open(file_path, mode=('rt', 'rb')[encoding is None], encoding=encoding) as _f:
+            # noinspection PyShadowingNames
             for token in self.tokenizer(char for line in _f for char in line):  # make sure to read line by line
                 yield token
 
