@@ -4,6 +4,7 @@ and writes the cleaned copied data to the output folder, preserving the relative
 
 if a tokenizer is used, only matches at token boundaries
 """
+import bisect
 import collections
 import datetime
 import glob
@@ -13,15 +14,26 @@ import os
 import random
 import re
 import time
+from typing import Any
 from typing import AnyStr
+from typing import Callable
+from typing import Dict
 from typing import Generator
 from typing import Iterable
 from typing import List
+from typing import Optional
+from typing import Tuple
 from typing import Union
 
 
 class Match:
-    def __init__(self, start, end, match):
+    __slots__ = ('__regs', '__str')
+
+    def __init__(self,
+                 start: int,
+                 end: int,
+                 match: str,
+                 ):
         """
         match result (similar to re.Match, but currently using token indices because of how tokenization works)
 
@@ -29,34 +41,48 @@ class Match:
         :param end: index after end token
         :param match: string matched
         """
-        self.regs = ((start, end),)  # mimic the re.Match object
-        self.str = match  # re.Match stores a reference to the ENTIRE ORIGINAL STRING, let's not do that
+        self.__regs = ((start, end),)  # mimic the re.Match object
+        self.__str = match  # re.Match stores a reference to the ENTIRE ORIGINAL STRING, let's not do that
 
-    def __getitem__(self, group_index):
+    @property
+    def regs(self) -> Tuple[Tuple[int, int]]:
+        return self.__regs
+
+    @property
+    def str(self) -> str:
+        return self.__str
+
+    def __getitem__(self, group_index: int) -> str:
         if group_index != 0:
             raise IndexError('no such group')
-        return self.str
+        return self.__str
 
-    def group(self, group_index=0):
+    def group(self, group_index: int = 0) -> str:
         return self[group_index]
 
-    def start(self, group_index=0):
+    def start(self, group_index: int = 0) -> int:
         if group_index != 0:
             raise IndexError('no such group')
-        return self.regs[0][0]
+        return self.__regs[0][0]
 
-    def end(self, group_index=0):
+    def end(self, group_index: int = 0) -> int:
         if group_index != 0:
             raise IndexError('no such group')
-        return self.regs[0][1]
+        return self.__regs[0][1]
 
-    def span(self, group_index=0):
+    def span(self, group_index: int = 0) -> Tuple[int, int]:
         if group_index != 0:
             raise IndexError('no such group')
-        return self.regs[0]
+        return self.__regs[0]
 
-    def __repr__(self):
-        return f'<Match object; span={self.regs[0]}, match={repr(self.str)}>'
+    def __len__(self):
+        return self.__regs[0][1] - self.__regs[0][0]
+
+    def __str__(self) -> str:
+        return self.__str
+
+    def __repr__(self) -> str:
+        return f'<Match object; span={self.__regs[0]}, match={repr(self.__str)}>'
 
 
 def format_bytes(num):
@@ -103,31 +129,23 @@ def format_seconds(num):
     return ('%.2f %s' if num % 1 else '%d %s') % (num, unit[:-1] if num == 1 else unit)
 
 
-def yield_lines(file_path, make_lower=False, threshold_len=0):
-    """
-    yields all non-empty lines in a file
-
-    :param file_path: file to read
-    :param make_lower: force line to lowercase
-    :param threshold_len: ignore lines equal <= this length
-    """
-    with io.open(file_path, mode='rt', encoding='utf-8') as _f:
-        for line in _f:
-            line = line.strip()
-            if make_lower:
-                line = line.lower()
-            if len(line) > threshold_len:
-                yield line
-
-
 _NOTHING = object()  # in Google's pygtrie library this is called `_SENTINEL`
+REPLACEMENTS_TYPE = Union[
+    Iterable[Tuple[AnyStr, AnyStr]],
+    Dict[AnyStr, AnyStr],
+    Generator[Tuple[AnyStr, AnyStr], Any, None],
+]
 
 
 class Trie(object):
     __slots__ = ('root', 'tokenizer', 'detokenizer', 'length')
 
     @staticmethod
-    def fromkeys(keys, default='', verbose=False, case_sensitive=True):
+    def fromkeys(keys: Iterable[str],
+                 default: str = '',
+                 case_sensitive: bool = True,
+                 verbose: bool = False,
+                 ) -> 'Trie':
         _trie = Trie(lowercase=not case_sensitive)
         _trie.update(((key, default) for key in keys), verbose=verbose)
         return _trie
@@ -139,12 +157,16 @@ class Trie(object):
         def __init__(self):
             self.REPLACEMENT = _NOTHING
 
-    def __init__(self, replacements=None, tokenizer=None, detokenizer=None, lowercase=False):
+    def __init__(self,
+                 replacements: Optional[REPLACEMENTS_TYPE] = None,
+                 tokenizer: Callable[[Iterable[AnyStr]], Iterable[AnyStr]] = None,
+                 detokenizer: Callable[[Iterable[AnyStr]], AnyStr] = None,
+                 lowercase: bool = False,
+                 ):
         """
 
         :param replacements:
         :param tokenizer: tokenizer that reads one character at a time and yields tokens
-        :type tokenizer: Iterable -> Iterable
         :param detokenizer: function to combine tokens back into a string
         :param lowercase: if True, lowercase all the things (including output)
         """
@@ -184,7 +206,7 @@ class Trie(object):
         if replacements is not None:
             self.update(replacements)
 
-    def __contains__(self, key):
+    def __contains__(self, key: AnyStr) -> bool:
         head = self.root
         for token in self.tokenizer(key):
             if token not in head:
@@ -192,11 +214,9 @@ class Trie(object):
             head = head[token]
         return head.REPLACEMENT is not _NOTHING
 
-    def __len__(self):
-        # return self.length
-        length = sum(1 for _ in self.items())
-        assert length == self.length
-        return length
+    def __len__(self) -> int:
+        assert self.length == sum(1 for _ in self.items())  # debugging test, not stress-tested yet
+        return self.length
 
     def _item_slice(self, start, stop, step=None):
         out = []
@@ -313,7 +333,13 @@ class Trie(object):
             else:
                 assert not _stack
 
-    def to_regex(self, fuzzy_quotes=True, fuzzy_spaces=True, fffd_any=True, simplify=True, boundary=False):
+    def to_regex(self,
+                 fuzzy_quotes: bool = True,
+                 fuzzy_spaces: bool = True,
+                 fffd_any: bool = True,
+                 simplify: bool = True,
+                 boundary: bool = False,
+                 ) -> str:
         """
         build a (potentially very very long) regex to find any text in the trie
 
@@ -389,7 +415,7 @@ class Trie(object):
 
         if simplify:
 
-            def char_group(match):
+            def char_group(match: re.Match) -> str:
                 """
                 helper function to simplify character groups for regex creation
                 used with the regex below to convert '(?:a|b|c|d)' -> '[abcd]'
@@ -432,22 +458,25 @@ class Trie(object):
                 return ''.join(out)
 
             # this matches a single (possibly escaped) character
-            _char = r'(?:\\(?:u\d\d\d\d|x\d\d|\d\d\d?|.)|[^\\])'
+            _char = re.compile(r'(?:\\(?:U[0-9a-fA-F]{8}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[0-7]{2,3}|.)|[^\\])')
 
             # simplify `(?:x|y|z)` -> `[xyz]`
-            _pattern = re.sub(r'(?<!\\)\(\?:({C}(?:\|{C})*)\)'.format(C=_char), char_group, _pattern)
+            _pattern = re.sub(r'(?<!\\)\(\?:({C}(?:\|{C})*)\)'.format(C=_char.pattern), char_group, _pattern)
 
             # simplify `(?:[xyz])` -> `[xyz]`
+            # noinspection RegExpRedundantEscape
             _pattern = re.sub(r'(?<!\\)\(\?:(\[[^\[\]]*[^\[\]\\]\])\)', r'\1', _pattern)
 
             # simplify `(?:[xyz]?)?` -> `[xyz]?`
+            # noinspection RegExpRedundantEscape
             _pattern = re.sub(r'(?<!\\)\(\?:(\[[^\[\]]*[^\[\]\\]\]\?)\)\??', r'\1', _pattern)
 
             # simplify `[.]` -> `.`
-            _pattern = re.sub(r'(?<!\\)\[({C})\]'.format(C=_char), r'\1', _pattern)
+            # noinspection RegExpRedundantEscape
+            _pattern = re.sub(r'(?<!\\)\[({C})\]'.format(C=_char.pattern), r'\1', _pattern)
 
             # simplify `(?:.)` -> `.`
-            _pattern = re.sub(r'\(\?:({C})\)'.format(C=_char), r'\1', _pattern)
+            _pattern = re.sub(r'\(\?:({C})\)'.format(C=_char.pattern), r'\1', _pattern)
 
         # force surrounding brackets, and enforce word boundary
         if _pattern[3:] == '(?:':
@@ -482,15 +511,14 @@ class Trie(object):
         for key, value in self.items():
             yield value
 
-    def update(self, replacements, verbose=True):
-        """
-        :type replacements: list[(str, str)] | dict[str, str] | Generator[(str, str), Any, None]
-        :type verbose: bool
-        """
-        if type(replacements) is list:
-            print_str = '(%%d pairs loaded out of %d)' % len(replacements)
-        elif type(replacements) is dict:
-            print_str = '(%%d pairs loaded out of %d)' % len(replacements)
+    def update(self,
+               replacements: REPLACEMENTS_TYPE,
+               verbose: bool = True,
+               ):
+        if isinstance(replacements, (list, tuple)):
+            print_str = f'(%d pairs loaded out of {len(replacements)})'
+        elif isinstance(replacements, dict):
+            print_str = f'(%d pairs loaded out of {len(replacements)})'
             replacements = replacements.items()
         else:
             print_str = '(%d pairs loaded)'
@@ -501,9 +529,13 @@ class Trie(object):
             self[sequence] = replacement
         return self
 
-    def _yield_tokens(self, file_path: Union[str, os.PathLike], encoding: str = 'utf8') -> Generator[str, None, None]:
+    def _yield_tokens(self,
+                      file_path: Union[str, os.PathLike],
+                      encoding: str = 'utf8',
+                      ) -> Generator[str, None, None]:
         """
         yield tokens from a file given its path
+
         :param encoding:
         :param file_path: file to read
         """
@@ -511,7 +543,9 @@ class Trie(object):
             for token in self.tokenizer(char for line in _f for char in line):  # make sure to read line by line
                 yield token
 
-    def _translate_tokens(self, tokens: Iterable[AnyStr]) -> Generator[AnyStr, None, None]:
+    def _translate_tokens(self,
+                          tokens: Iterable[AnyStr],
+                          ) -> Generator[AnyStr, None, None]:
         """
         processes text and yields output one token at a time
         :param tokens: iterable of hashable objects, preferably strings
@@ -598,7 +632,11 @@ class Trie(object):
         while output_buffer:
             yield output_buffer.popleft()[1]
 
-    def finditer(self, input_sequence: AnyStr, *, allow_overlapping: bool = False) -> Generator[Match, None, None]:
+    def finditer(self,
+                 input_sequence: AnyStr,
+                 *,
+                 allow_overlapping: bool = False,
+                 ) -> Generator[Match, Any, None]:
         """
         finds all occurrences within a string
 
@@ -655,10 +693,15 @@ class Trie(object):
                 else:
                     break
 
+        # reached end of string, return all remaining matches
         for match_start, (match_end, match_sequence) in sorted(matches.items()):
             yield Match(match_start, match_end, self.detokenizer(match_sequence))
 
-    def search(self, input_sequence: AnyStr, *, allow_overlapping: bool = False) -> Union[Match, None]:
+    def search(self,
+               input_sequence: AnyStr,
+               *,
+               allow_overlapping: bool = False,
+               ) -> Union[Match, None]:
         """
         # todo: code a special case since we don't need to track multiple matches?
 
@@ -668,10 +711,90 @@ class Trie(object):
         for match in self.finditer(input_sequence, allow_overlapping=allow_overlapping):
             return match
 
-    def findall(self, input_sequence: AnyStr, *, allow_overlapping: bool = False) -> List[AnyStr]:
+    def findall(self,
+                input_sequence: AnyStr,
+                *,
+                allow_overlapping: bool = False,
+                ) -> List[AnyStr]:
         return [match.str for match in self.finditer(input_sequence, allow_overlapping=allow_overlapping)]
 
-    def translate(self, text: str) -> str:
+    def findall_longest(self,
+                        input_sequence: AnyStr,
+                        ) -> List[AnyStr]:
+
+        def longest_increasing_subsequence(matches: List[Match]) -> List[Match]:
+            if not matches:
+                return []
+
+            ends = [0]  # position
+            values = [(0, None)]  # total length, matches as a nested 2-tuple
+
+            # noinspection PyShadowingNames
+            matches = sorted(matches, reverse=True, key=lambda m: (m.end(), m.start()))
+            while matches:
+                # find the match with an endpoint closest to start
+                _end = matches[-1].end()
+                assert _end > ends[-1]
+
+                # take all matches with this endpoint
+                _matches = []
+                while matches and matches[-1].end() == _end:
+                    _matches.append(matches.pop(-1))
+                assert len(_matches) > 0
+
+                # find the max total length set of matches to reach this endpoint
+                best_value = (0, -_end)
+                best_match = None
+                # noinspection PyShadowingNames
+                for _match in _matches:
+                    prev_value, prev_match = values[bisect.bisect_right(ends, _match.start()) - 1]
+                    new_value = (prev_value + len(_match), -_match.start())
+                    if new_value > best_value:
+                        best_value = new_value
+                        best_match = (_match, prev_match)
+                assert best_match is not None
+                _matches.clear()
+
+                # append to ends and values if it's better than the last seen value
+                prev_value, prev_match = values[-1]
+                if best_value[0] > prev_value:
+                    ends.append(_end)
+                    values.append((best_value[0], best_match))
+
+            _out = []
+            _, best_match = values[-1]
+            while best_match is not None:
+                _out.append(best_match[0])
+                best_match = best_match[1]
+
+            # sort and return
+            _out.reverse()
+            return _out
+
+        out = []
+        match_cluster = []
+        match_cluster_end = 0
+        for match in sorted(self.finditer(input_sequence, allow_overlapping=True),
+                            key=lambda m: (m.start(), m.end())):
+            if not match_cluster or match.start() < match_cluster_end:
+                match_cluster.append(match)
+                match_cluster_end = max(match_cluster_end, match.end())
+            else:
+                _match_cluster, match_cluster = match_cluster, []
+                match_cluster.append(match)
+                match_cluster_end = max(match_cluster_end, match.end())
+                for _match in longest_increasing_subsequence(_match_cluster):
+                    out.append(_match.str)
+                _match_cluster.clear()
+
+        # remaining cluster
+        for match in longest_increasing_subsequence(match_cluster):
+            out.append(match.str)
+        match_cluster.clear()
+
+        return out
+
+    def translate(self, text: AnyStr) -> str:
         """
         kind of like re.sub, but you don't provide replacements because it's already defined
         >>> Trie({'yellow': 'hello'}).translate('yellow world')
@@ -728,8 +851,13 @@ class Trie(object):
             print('total time: %s' % format_seconds(t1 - t0))
 
     # I've had enough of my own typos
+    from_keys = fromKeys = fromkeys
+    find_first = findFirst = find = search
     find_all = findAll = findall
     find_iter = findIter = finditer
+    find_longest = findLongest = findall_longest
+    replace = translate
+
 
 def to_regex(list_of_strings,
              case_sensitive=False,
@@ -897,7 +1025,11 @@ if __name__ == '__main__':
     file_name_pattern = '*'
 
     # you can use a generator for the mapping to save memory space
-    mapping = [(line.split()[0], line.split()[-1][::-1]) for line in yield_lines('test/input/english-long.txt')]
+    mapping = []
+    with open('test/input/english-long.txt', encoding='utf8') as f:
+        for line in f:
+            line = line.strip()
+            mapping.append((line.split()[0], line.split()[-1][::-1]))
     print('%d pairs of replacements' % len(mapping))
 
     # parse mapping list into trie with a tokenizer
