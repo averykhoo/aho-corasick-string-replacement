@@ -458,6 +458,7 @@ class Trie(object):
                 return ''.join(out)
 
             # this matches a single (possibly escaped) character
+            # noinspection RegExpUnnecessaryNonCapturingGroup
             _char = re.compile(r'(?:\\(?:U[0-9a-fA-F]{8}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[0-7]{2,3}|.)|[^\\])')
 
             # simplify `(?:x|y|z)` -> `[xyz]`
@@ -528,6 +529,101 @@ class Trie(object):
                 print(print_str % (index + 1))
             self[sequence] = replacement
         return self
+
+    def levenshtein_lookup(self, word: str, distance: int):
+        """
+        lazy and probably not correct levenshtein lookup
+        but better than nothing
+        tests seem to indicate that it functions correctly though
+        and idk why
+        todo: fix
+
+        probably better to go through all the words one by one
+        but stop and backtrack once it passes the distance threshold
+        also then the results will be in lexicographically sorted order, which is nice
+
+        need path to store where we are and the distances at each node
+        maybe use 2 lists
+        and a stack to store where we need to go
+        each next step has to contain the current node and next step
+
+        """
+        assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
+        assert distance >= 0
+        assert isinstance(word, str)
+        assert len(word) > 0
+        #
+        # _path = []
+        # _distances = []
+        # _stack = [(self.root, sorted(self.root.keys(), reverse=True), 0)]
+        # while _stack:
+        #     head, keys = _stack.pop(-1)
+        #     if keys:
+        #         key = keys.pop(-1)
+        #         _stack.append((head, keys))
+        #         head = head[key]
+        #         _path.append(key)
+        #         if head.REPLACEMENT is not _NOTHING:
+        #             yield self.detokenizer(_path)  # , head.REPLACEMENT
+        #         _stack.append((head, sorted(head.keys(), reverse=True)))
+        #     elif _path:
+        #         _path.pop(-1)
+        #     else:
+        #         assert not _stack
+        states: List[Tuple[Tuple, Trie.Node, int]] = [((), self.root, 0)]
+
+        def insertion():
+            """
+            doesn't perform multiple insertions one after another
+            which means the implementation may be incorrect
+            """
+            nonlocal states
+            states, _prev_states = [], states
+            for _prev, _state, _distance in _prev_states:
+                states.append((_prev, _state, _distance))
+                if _distance + 1 <= distance:
+                    for _key, _next_state in _state.items():
+                        states.append(((_prev, _key), _next_state, _distance + 1))  # insertion
+
+        insertion()
+
+        def dedupe():
+            """
+            should just use a dict from the start, instead of using a list and having to dedupe
+            but the dedupe might also not be totally correct
+            """
+            nonlocal states
+            states, _prev_states = [], states
+            temp = dict()
+            for _prev, _state, _distance in _prev_states:
+                if _prev not in temp:
+                    temp[_prev] = (_distance, _state)
+                elif temp[_prev][0] > _distance:
+                    temp[_prev] = (_distance, _state)
+            for _prev, (_distance, _state) in temp.items():
+                states.append((_prev, _state, _distance))
+
+        for char in word:
+            states, prev_states = [], states
+            for prev, state, current_distance in prev_states:
+                if current_distance + 1 <= distance:
+                    states.append((prev, state, current_distance + 1))  # deletion
+                    for key, next_state in state.items():
+                        states.append(((prev, key), next_state, current_distance + (key != char)))  # substitution
+                elif char in state:
+                    states.append(((prev, char), state[char], current_distance))
+            insertion()
+            dedupe()
+
+        for string, state, _dist in states:
+            assert _dist <= distance
+            if state.REPLACEMENT is not _NOTHING:
+                tmp = []
+                while string:
+                    tmp.append(string[-1])
+                    string = string[0]
+                tmp.reverse()
+                yield ''.join(tmp)
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],
@@ -1090,3 +1186,11 @@ if __name__ == '__main__':
 
     # test space in regex
     print(repr(to_regex(['bo b', 'bo\xa0bo', 'boba', 'ba\t ba', 'bo bi'])))
+
+    # test levenshtein lookup
+    for i in range(5):
+        print(i)
+        t = time.time()
+        res = list(trie2.levenshtein_lookup('asalamalaikum', i))
+        print(time.time() - t)
+        print(len(res), sorted(res)[:25])
