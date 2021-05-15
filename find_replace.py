@@ -39,6 +39,7 @@ class Match:
         todo: normalize to char index
         todo: use a frozen dataclass
         todo: just refer to original string once we have the char indices, for compat
+        todo: but sometimes there is no original string (eg not kept in memory)
 
         :param start: index of start TOKEN (not char)
         :param end: index after end token
