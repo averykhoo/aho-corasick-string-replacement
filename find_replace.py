@@ -155,11 +155,32 @@ class Trie(object):
         return _trie
 
     class Node(dict):
+        # build time for 650656 words: 3.8s
+        # size for 650656 words: 369133837
+        # query time for 650656 words (dist=9): 8.1s
         __slots__ = ('REPLACEMENT',)
 
         # noinspection PyMissingConstructor
         def __init__(self):
             self.REPLACEMENT = _NOTHING
+
+        # # 3% smaller trie, but as much as 10% slower
+        # # build time for 650656 words: 3.2s
+        # # size for 650656 words: 357702525
+        # # query time for 650656 words (dist=9): 8.9s
+        # __slots__ = ()
+        #
+        # @property
+        # def REPLACEMENT(self):
+        #     return self.get(_NOTHING, _NOTHING)
+        #
+        # @REPLACEMENT.setter
+        # def REPLACEMENT(self, value):
+        #     if value is _NOTHING:
+        #         if _NOTHING in self:
+        #             del self[_NOTHING]
+        #     else:
+        #         self[_NOTHING] = value
 
     def __init__(self,
                  replacements: Optional[REPLACEMENTS_TYPE] = None,
@@ -541,10 +562,95 @@ class Trie(object):
                            insertion_cost: Union[int, float] = 1,
                            deletion_cost: Union[int, float] = 1,
                            substitution_cost: Union[int, float] = 1,
+                           # transposition_cost: Union[int, float] = 2,
                            ) -> Generator[str, Any, None]:
         """
         levenshtein / edit distance based approximate string lookup
-        todo: maybe try implementing as damerau-levenshtein (ie. with transposition)
+        todo: maybe allow returning values not just keys?
+        todo: special case for empty str?
+        todo: special case for distance = 0
+        todo: return distance?
+        todo: return node.REPLACEMENT?
+        """
+        assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
+        assert distance >= 0
+        assert isinstance(word, str)
+        assert len(word) > 0
+        assert insertion_cost >= 0
+        assert deletion_cost >= 0
+        assert substitution_cost >= 0
+        # assert transposition_cost >= 0
+
+        _path = []
+        _dp_table = [[d * deletion_cost for d in range(len(word) + 1)]]
+        _stack = [(self.root, list(self.root.keys()))]
+        _word = tuple(enumerate(word))
+        _template = [0] * (len(word) + 1)
+
+        # noinspection PyShadowingNames
+        def _levenshtein_iter(key):
+            nonlocal _path
+            nonlocal _word
+            nonlocal word
+            nonlocal _dp_table
+
+            next_row = _template[:]
+            next_row[0] = len(_dp_table) * insertion_cost
+
+            for idx_2, char_2 in _word:
+                # [idx_2 + 1] instead of j since _dp_table[-1] and current_row are one character longer than word
+                if key == char_2:
+                    next_row[idx_2 + 1] = _dp_table[-1][idx_2]
+                else:
+                    insertions = _dp_table[-1][idx_2 + 1] + insertion_cost
+                    deletions = next_row[idx_2] + deletion_cost
+                    substitutions = _dp_table[-1][idx_2] + substitution_cost
+                    next_row[idx_2 + 1] = min(insertions, deletions, substitutions)
+
+                    # # character transposition
+                    # if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
+                    #     transpositions = _dp_table[-2][idx_2 - 1] + transposition_cost
+                    #     next_row[idx_2 + 1] = min(insertions, deletions, substitutions, transpositions)
+                    # else:
+                    #     next_row[idx_2 + 1] = min(insertions, deletions, substitutions)
+            return next_row
+
+        while _stack:
+            head, keys = _stack[-1]
+            if keys:
+                key = keys.pop(-1)
+
+                next_head = head[key]
+                next_row = _levenshtein_iter(key)
+
+                # early exit?
+                if min(next_row) <= distance:
+                    _path.append(key)
+                    _dp_table.append(next_row)
+                    _stack.append((next_head, list(next_head.keys())))
+                    if next_row[-1] <= distance and next_head.REPLACEMENT is not _NOTHING:
+                        yield self.detokenizer(_path)  # , next_head.REPLACEMENT
+
+            elif _path:
+                _path.pop(-1)
+                _dp_table.pop(-1)
+                _stack.pop(-1)
+
+            else:
+                assert len(_dp_table) == 1
+                assert len(_stack) == 1
+                _stack.clear()
+
+    def damerau_levenshtein_lookup(self,
+                                   word: str,
+                                   distance: int,
+                                   insertion_cost: Union[int, float] = 1,
+                                   deletion_cost: Union[int, float] = 1,
+                                   substitution_cost: Union[int, float] = 1,
+                                   transposition_cost: Union[int, float] = 1,
+                                   ) -> Generator[str, Any, None]:
+        """
+        damerau levenshtein (ie. with transpose) based approximate string lookup
         todo: maybe allow returning values not just keys?
         todo: special case for empty str?
         todo: special case for distance = 0
@@ -556,46 +662,69 @@ class Trie(object):
         assert insertion_cost >= 0
         assert deletion_cost >= 0
         assert substitution_cost >= 0
+        assert transposition_cost >= 0
 
         _path = []
-        _dp_table = [range(len(word) + 1)]
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _dp_table = [[d * deletion_cost for d in range(1, len(word) + 1)] + [0]]
+        _stack = [(self.root, list(self.root.keys()))]
+        _word = tuple(enumerate(word))
+        _template = [0] * (len(word) + 1)
+        # _out = []
+
+        # noinspection PyShadowingNames
+        def _damerau_levenshtein_iter(key):
+            nonlocal _path
+            nonlocal _word
+            nonlocal word
+            nonlocal _dp_table
+
+            next_row = _template[:]  # faster than _template.copy()
+            next_row[-1] = _dp_table[-1][-1] + insertion_cost  # hack to make -1 an index
+            for idx_2, char_2 in _word:
+                if key == char_2:
+                    next_row[idx_2] = _dp_table[-1][idx_2 - 1]
+                else:
+                    insertions = _dp_table[-1][idx_2] + insertion_cost
+                    deletions = next_row[idx_2 - 1] + deletion_cost
+                    substitutions = _dp_table[-1][idx_2 - 1] + substitution_cost
+                    # next_row[idx_2] = min(insertions, deletions, substitutions)
+
+                    # character transposition
+                    if _path and idx_2 and key == word[idx_2 - 1] and _path[-1] == char_2:
+                        transpositions = _dp_table[-2][idx_2 - 2] + transposition_cost
+                        next_row[idx_2] = min(insertions, deletions, substitutions, transpositions)
+                    else:
+                        next_row[idx_2] = min(insertions, deletions, substitutions)
+            return next_row
 
         while _stack:
-            head, keys = _stack.pop(-1)
+            head, keys = _stack[-1]
             if keys:
                 key = keys.pop(-1)
-                _stack.append((head, keys))
 
-                assert len(_dp_table) > 0
                 next_head = head[key]
-                next_row = [len(_dp_table)]
-
-                for idx_2, char_2 in enumerate(word):
-                    # [idx_2 + 1] instead of j since _dp_table[-1] and current_row are one character longer than word
-                    insertions = _dp_table[-1][idx_2 + 1] + insertion_cost
-                    deletions = next_row[idx_2] + deletion_cost
-                    if key == char_2:
-                        substitutions = _dp_table[-1][idx_2]
-                    else:
-                        substitutions = _dp_table[-1][idx_2] + substitution_cost
-                    next_row.append(min(insertions, deletions, substitutions))
+                next_row = _damerau_levenshtein_iter(key)
 
                 # early exit?
                 if min(next_row) <= distance:
                     _path.append(key)
                     _dp_table.append(next_row)
-                    _stack.append((next_head, sorted(next_head.keys(), reverse=True)))
-                    if next_row[-1] <= distance and next_head.REPLACEMENT is not _NOTHING:
+                    _stack.append((next_head, list(next_head.keys())))
+                    if next_row[-2] <= distance and next_head.REPLACEMENT is not _NOTHING:  # order doesn't change speed
+                        # _out.append(self.detokenizer(_path))
                         yield self.detokenizer(_path)  # , next_head.REPLACEMENT
 
             elif _path:
                 _path.pop(-1)
                 _dp_table.pop(-1)
+                _stack.pop(-1)
 
             else:
-                assert not _stack
                 assert len(_dp_table) == 1
+                assert len(_stack) == 1
+                _stack.clear()
+
+        # return _out
 
     def _yield_tokens(self,
                       file_path: Union[str, os.PathLike],
@@ -745,11 +874,11 @@ class Trie(object):
 
             # remove impossible spans and matches from queues
             for span_start in matches_to_remove.intersection(matches):
-                    del matches[span_start]
+                del matches[span_start]
             for span_start in matches_to_remove.intersection(spans):
                 del spans[span_start]
             for span_start in spans_to_remove.intersection(spans):
-                    del spans[span_start]
+                del spans[span_start]
 
             # get indices of matches and spans
             first_span = min(spans) if spans else index
