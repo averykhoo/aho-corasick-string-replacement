@@ -13,6 +13,7 @@ import math
 import os
 import random
 import re
+import sys
 import time
 from typing import Any
 from typing import AnyStr
@@ -38,15 +39,13 @@ class Match:
         match result (similar to re.Match, but currently using token indices because of how tokenization works)
         todo: normalize to char index
         todo: use a frozen dataclass
-        todo: just refer to original string once we have the char indices, for compat
-        todo: but sometimes there is no original string (eg not kept in memory)
 
         :param start: index of start TOKEN (not char)
         :param end: index after end token
         :param match: string matched
         """
         self.__regs = ((start, end),)  # mimic the re.Match object
-        self.__str = match  # re.Match stores a reference to the ENTIRE ORIGINAL STRING, let's not do that
+        self.__str = match  # re.Match references the original string to save space, but we might match a char iterator
 
     @property
     def regs(self) -> Tuple[Tuple[int, int]]:
@@ -148,26 +147,27 @@ class Trie(object):
     def fromkeys(keys: Iterable[str],
                  default: str = '',
                  case_sensitive: bool = True,
+                 sort: bool = False,
                  verbose: bool = False,
                  ) -> 'Trie':
         _trie = Trie(lowercase=not case_sensitive)
         _trie.update(((key, default) for key in keys), verbose=verbose)
+        if sort:
+            _trie.sort_keys()
         return _trie
 
     class Node(dict):
-        # build time for 650656 words: 3.8s
-        # size for 650656 words: 369133837
-        # query time for 650656 words (dist=9): 8.1s
         __slots__ = ('REPLACEMENT',)
 
         # noinspection PyMissingConstructor
         def __init__(self):
+            # todo: rename "REPLACEMENT" to something better, like "value"
+            # todo: rename "_NOTHING" to something better, like "NULL" or "UNDEFINED" or "NotAvailable"
             self.REPLACEMENT = _NOTHING
 
-        # # 3% smaller trie, but as much as 10% slower
-        # # build time for 650656 words: 3.2s
-        # # size for 650656 words: 357702525
-        # # query time for 650656 words (dist=9): 8.9s
+        # # trie size is 3% smaller
+        # # trie building is 15% faster
+        # # trie querying is 10% slower <- not worth it
         # __slots__ = ()
         #
         # @property
@@ -230,6 +230,56 @@ class Trie(object):
 
         if replacements is not None:
             self.update(replacements)
+
+    @property
+    def nbytes(self) -> int:
+        """
+        size of this Trie in bytes
+        similar to numpy.array([]).nbytes
+        """
+        total_bytes = 0
+        seen_ids = set()
+
+        for obj in (self, self.length, self.tokenizer, self.detokenizer):
+            assert id(obj) not in seen_ids
+            total_bytes += sys.getsizeof(obj)
+            seen_ids.add(id(obj))
+
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            stack.extend(node.values())
+            for obj in (node, node.REPLACEMENT, *node.keys()):
+                if id(obj) not in seen_ids:
+                    total_bytes += sys.getsizeof(obj)
+                    seen_ids.add(id(obj))
+
+        return total_bytes
+
+    def sort_keys(self, ascending=True, case_sensitive=True):
+        """
+        lexicographically sort keys in the trie
+        ascending=True -> returns a-z
+        ascending=False -> returns z-a
+
+        unsorted trie output does not follow input order
+        and it can't anyway, unless I store a list of some kind, which I won't
+        """
+        if case_sensitive:
+            def compare(token) -> Tuple[str, str]:
+                return token.casefold(), token  # actually semi case sensitive, because that makes more sense
+        else:
+            def compare(token) -> str:
+                return token
+
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            node_copy = node.copy()
+            node.clear()
+            for key in sorted(node_copy.keys(), reverse=ascending, key=compare):
+                node[key] = node_copy[key]
+                stack.append(node_copy[key])
 
     def __contains__(self, key: AnyStr) -> bool:
         head = self.root
@@ -343,7 +393,7 @@ class Trie(object):
     def items(self):
         # todo: special case for empty str?
         _path = []
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         while _stack:
             head, keys = _stack.pop(-1)
             if keys:
@@ -353,7 +403,7 @@ class Trie(object):
                 _path.append(key)
                 if head.REPLACEMENT is not _NOTHING:
                     yield self.detokenizer(_path), head.REPLACEMENT
-                _stack.append((head, sorted(head.keys(), reverse=True)))
+                _stack.append((head, list(head.keys())))
             elif _path:
                 _path.pop(-1)
             else:
@@ -379,7 +429,7 @@ class Trie(object):
         assert list(self.tokenizer('test-test test')) == list('test-test test'), "shouldn't use a tokenizer"
 
         _parts = [[], []]
-        _stack = [(self.root, sorted(self.root.keys(), reverse=True))]
+        _stack = [(self.root, list(self.root.keys()))]
         while _stack:
             head, keys = _stack.pop(-1)
             if keys:
@@ -419,7 +469,7 @@ class Trie(object):
                 _parts[-1].append(key)
 
                 # one level down
-                _stack.append((head, sorted(head.keys(), reverse=True)))
+                _stack.append((head, list(head.keys())))
                 _parts.append([])
 
             else:
