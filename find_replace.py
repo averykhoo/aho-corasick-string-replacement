@@ -147,7 +147,7 @@ class Trie(object):
     def fromkeys(keys: Iterable[str],
                  default: str = '',
                  case_sensitive: bool = True,
-                 sort: bool = False,
+                 sort: bool = True,
                  verbose: bool = False,
                  ) -> 'Trie':
         _trie = Trie(lowercase=not case_sensitive)
